@@ -57,9 +57,8 @@ private:
         power_save_timer_->OnShutdownRequest([this]() {
             ESP_LOGI(TAG, "Shutting down");
             rtc_gpio_set_level(GPIO_NUM_21, 0);
-            // 启用保持功能，确保睡眠期间电平不变
             rtc_gpio_hold_en(GPIO_NUM_21);
-            esp_lcd_panel_disp_on_off(panel_, false); //关闭显示
+            esp_lcd_panel_disp_on_off(panel_, false);
             esp_deep_sleep_start();
         });
         power_save_timer_->SetEnabled(true);
@@ -127,8 +126,8 @@ private:
         esp_lcd_panel_io_spi_config_t io_config = {};
         io_config.cs_gpio_num = DISPLAY_CS;
         io_config.dc_gpio_num = DISPLAY_DC;
-        io_config.spi_mode = 3;
-        io_config.pclk_hz = 80 * 1000 * 1000;
+        io_config.spi_mode = 0; // CORREGIDO: Cambiado de 3 a Modo 0 estándar
+        io_config.pclk_hz = 40 * 1000 * 1000; // CORREGIDO: Reducido de 80MHz a 40MHz estable
         io_config.trans_queue_depth = 10;
         io_config.lcd_cmd_bits = 8;
         io_config.lcd_param_bits = 8;
