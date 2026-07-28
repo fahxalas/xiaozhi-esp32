@@ -1,6 +1,6 @@
 #include "wifi_board.h"
 #include "display/lcd_display.h"
-#include "codecs/es8311_audio_codec.h"
+#include "codecs/no_audio_codec.h"
 #include "application.h"
 #include "button.h"
 #include "led/circular_strip.h"
@@ -9,7 +9,6 @@
 
 #include <esp_lcd_panel_vendor.h>
 #include <esp_log.h>
-#include <driver/i2c_master.h>
 #include <driver/spi_common.h>
 #include <esp_lcd_nv3023.h>
 
@@ -28,7 +27,6 @@ public:
     void SetupUI() override {
         SpiLcdDisplay::SetupUI();
 
-        // Apply custom color styles after parent creates all LVGL objects
         DisplayLockGuard lock(this);
         auto screen = lv_disp_get_scr_act(lv_disp_get_default());
         lv_obj_set_style_text_color(screen, lv_color_black(), 0);
@@ -51,7 +49,6 @@ public:
 
 class magiclick_2p4 : public WifiBoard {
 private:
-    i2c_master_bus_handle_t codec_i2c_bus_;
     Button main_button_;
     Button left_button_;
     Button right_button_;
@@ -86,23 +83,6 @@ private:
         });
          
         power_save_timer_->SetEnabled(true);
-    }
-
-    void InitializeCodecI2c() {
-        // Initialize I2C peripheral
-        i2c_master_bus_config_t i2c_bus_cfg = {
-            .i2c_port = I2C_NUM_0,
-            .sda_io_num = AUDIO_CODEC_I2C_SDA_PIN,
-            .scl_io_num = AUDIO_CODEC_I2C_SCL_PIN,
-            .clk_source = I2C_CLK_SRC_DEFAULT,
-            .glitch_ignore_cnt = 7,
-            .intr_priority = 0,
-            .trans_queue_depth = 0,
-            .flags = {
-                .enable_internal_pullup = 1,
-            },
-        };
-        ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &codec_i2c_bus_));
     }
 
     void InitializeButtons() {
@@ -162,7 +142,6 @@ private:
     }
 
     void InitializeLedPower() {
-        // 设置GPIO模式
         gpio_reset_pin(BUILTIN_LED_POWER);
         gpio_set_direction(BUILTIN_LED_POWER, GPIO_MODE_OUTPUT);
         gpio_set_level(BUILTIN_LED_POWER, BUILTIN_LED_POWER_OUTPUT_INVERT ? 0 : 1);
@@ -180,9 +159,6 @@ private:
     }
 
     void InitializeNv3023Display(){
-        // esp_lcd_panel_io_handle_t panel_io = nullptr;
-        // esp_lcd_panel_handle_t panel = nullptr;
-        // 液晶屏控制IO初始化
         ESP_LOGD(TAG, "Install panel IO");
         esp_lcd_panel_io_spi_config_t io_config = {};
         io_config.cs_gpio_num = DISPLAY_CS_PIN;
@@ -194,7 +170,6 @@ private:
         io_config.lcd_param_bits = 8;
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(SPI3_HOST, &io_config, &panel_io));
 
-        // 初始化液晶屏驱动芯片NV3023
         ESP_LOGD(TAG, "Install LCD driver");
         esp_lcd_panel_dev_config_t panel_config = {};
         panel_config.reset_gpio_num = DISPLAY_RST_PIN;
@@ -221,7 +196,6 @@ public:
         InitializeLedPower();
         InitializePowerManager();
         InitializePowerSaveTimer();        
-        InitializeCodecI2c();
         InitializeButtons();
         InitializeSpi();
         InitializeNv3023Display();
@@ -234,9 +208,8 @@ public:
     }
 
     virtual AudioCodec* GetAudioCodec() override {
-        static Es8311AudioCodec audio_codec(codec_i2c_bus_, I2C_NUM_0, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
-            AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
-            AUDIO_CODEC_PA_PIN, AUDIO_CODEC_ES8311_ADDR);
+        static NoAudioCodecSimplex audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
+            AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DIN);
         return &audio_codec;
     }
 
