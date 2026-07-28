@@ -12,46 +12,25 @@
 #include <esp_log.h>
 #include <esp_lcd_panel_vendor.h>
 #include <esp_lcd_nv3023.h>
+#include <driver/gpio.h>
 
 #define TAG "XINGZHI_CUBE_1_54TFT_WIFI"
-
-class NV3023Display : public SpiLcdDisplay {
-public:
-    NV3023Display(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
-                int width, int height, int offset_x, int offset_y, bool mirror_x, bool mirror_y, bool swap_xy)
-        : SpiLcdDisplay(panel_io, panel, width, height, offset_x, offset_y, mirror_x, mirror_y, swap_xy) {
-    }
-
-    void SetupUI() override {
-        SpiLcdDisplay::SetupUI();
-
-        DisplayLockGuard lock(this);
-        auto screen = lv_disp_get_scr_act(lv_disp_get_default());
-        lv_obj_set_style_text_color(screen, lv_color_black(), 0);
-        lv_obj_set_style_bg_color(container_, lv_color_black(), 0);
-
-        lv_obj_set_style_bg_color(status_bar_, lv_color_white(), 0);
-        lv_obj_set_style_text_color(network_label_, lv_color_black(), 0);
-        lv_obj_set_style_text_color(notification_label_, lv_color_black(), 0);
-        lv_obj_set_style_text_color(status_label_, lv_color_black(), 0);
-        lv_obj_set_style_text_color(mute_label_, lv_color_black(), 0);
-        lv_obj_set_style_text_color(battery_label_, lv_color_black(), 0);
-
-        lv_obj_set_style_bg_color(content_, lv_color_black(), 0);
-        lv_obj_set_style_border_width(content_, 0, 0);
-        lv_obj_set_style_text_color(emoji_label_, lv_color_white(), 0);
-        lv_obj_set_style_text_color(chat_message_label_, lv_color_white(), 0);
-    }
-};
 
 class XINGZHI_CUBE_1_54TFT_WIFI : public WifiBoard {
 private:
     Button boot_button_;
-    NV3023Display* display_;
+    SpiLcdDisplay* display_;
     PowerSaveTimer* power_save_timer_;
     PowerManager* power_manager_;
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
+
+    void InitializeLedPower() {
+        // En MagiClick 2P4 el GPIO 39 habilita la alimentación de periféricos
+        gpio_reset_pin(GPIO_NUM_39);
+        gpio_set_direction(GPIO_NUM_39, GPIO_MODE_OUTPUT);
+        gpio_set_level(GPIO_NUM_39, 0); // Activo en bajo
+    }
 
     void InitializePowerManager() {
         power_manager_ = new PowerManager(GPIO_NUM_48);
@@ -133,13 +112,14 @@ private:
         esp_lcd_panel_mirror(panel_, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
 
-        display_ = new NV3023Display(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, 
+        display_ = new SpiLcdDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, 
             DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
 public:
     XINGZHI_CUBE_1_54TFT_WIFI() :
         boot_button_(BOOT_BUTTON_GPIO) {
+        InitializeLedPower();
         InitializePowerManager();
         InitializePowerSaveTimer();
         InitializeSpi();
