@@ -14,7 +14,7 @@
 #define AUDIO_I2S_MIC_GPIO_WS     GPIO_NUM_11
 #define AUDIO_I2S_MIC_GPIO_DIN    GPIO_NUM_10
 
-// --- BOTÓN ÚNICO (GPIO 0 es el botón físico principal) ---
+// --- BOTÓN FÍSICO ÚNICO ---
 #define BOOT_BUTTON_GPIO        GPIO_NUM_0
 #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_NC
 #define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_NC
