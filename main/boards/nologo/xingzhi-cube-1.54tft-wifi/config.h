@@ -23,12 +23,13 @@
 #define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_NC
 
 // --- PANTALLA TFT 1.54" (Configuración A) ---
-#define DISPLAY_SDA GPIO_NUM_13 // MOSI (Datos)
-#define DISPLAY_SCL GPIO_NUM_12 // SCLK (Reloj)
-#define DISPLAY_DC  GPIO_NUM_11 // Data / Command
-#define DISPLAY_CS  GPIO_NUM_10 // Chip Select
-#define DISPLAY_RES GPIO_NUM_9  // Reset
-#define DISPLAY_BACKLIGHT_PIN GPIO_NUM_14 // Control de Luz
+
+#define DISPLAY_SDA GPIO_NUM_11
+#define DISPLAY_SCL GPIO_NUM_12
+#define DISPLAY_DC  GPIO_NUM_8
+#define DISPLAY_CS  GPIO_NUM_9
+#define DISPLAY_RES GPIO_NUM_10
+#define DISPLAY_BACKLIGHT_PIN GPIO_NUM_13
 
 #define DISPLAY_WIDTH   240
 #define DISPLAY_HEIGHT  240
