@@ -5,12 +5,12 @@
 #include "button.h"
 #include "config.h"
 #include "power_save_timer.h"
-#include <i2c_bus.h>
 
 #include <esp_log.h>
 #include <esp_lcd_panel_vendor.h>
 #include <esp_lcd_nv3023.h>
 #include <driver/gpio.h>
+#include <driver/i2c_master.h>
 
 #ifndef ES8311_CODEC_DEFAULT_ADDR
 #define ES8311_CODEC_DEFAULT_ADDR 0x18
@@ -24,7 +24,7 @@
 
 class MagiClick2P4Board : public WifiBoard {
 private:
-    i2c_bus_handle_t i2c_bus_ = nullptr;
+    i2c_master_bus_handle_t i2c_bus_ = nullptr;
     Es8311AudioCodec* audio_codec_ = nullptr;
     Button main_button_;
     Button left_button_;
@@ -43,18 +43,15 @@ private:
     }
 
     void InitializeI2c() {
-        i2c_config_t i2c_cfg = {
-            .mode = I2C_MODE_MASTER,
-            .sda_io_num = AUDIO_CODEC_I2C_SDA_PIN,
-            .scl_io_num = AUDIO_CODEC_I2C_SCL_PIN,
-            .sda_pullup_en = GPIO_PULLUP_ENABLE,
-            .scl_pullup_en = GPIO_PULLUP_ENABLE,
-            .master = {
-                .clk_speed = 100000,
-            },
-            .clk_flags = 0,
-        };
-        i2c_bus_ = i2c_bus_create(I2C_NUM_0, &i2c_cfg);
+        i2c_master_bus_config_t i2c_bus_cfg = {};
+        i2c_bus_cfg.i2c_port = I2C_NUM_0;
+        i2c_bus_cfg.sda_io_num = AUDIO_CODEC_I2C_SDA_PIN;
+        i2c_bus_cfg.scl_io_num = AUDIO_CODEC_I2C_SCL_PIN;
+        i2c_bus_cfg.clk_source = I2C_CLK_SRC_DEFAULT;
+        i2c_bus_cfg.glitch_ignore_cnt = 7;
+        i2c_bus_cfg.flags.enable_internal_pullup = true;
+        
+        ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &i2c_bus_));
     }
 
     void InitializePowerSaveTimer() {
@@ -157,7 +154,6 @@ public:
         InitializePower();
         InitializeI2c();
 
-        // 13 argumentos requeridos exactamente por Es8311AudioCodec:
         audio_codec_ = new Es8311AudioCodec(
             i2c_bus_,
             I2C_NUM_0,
