@@ -8,7 +8,6 @@
 
 #include <esp_log.h>
 #include <esp_lcd_panel_vendor.h>
-#include <esp_lcd_st7789.h>
 #include <driver/gpio.h>
 
 #define TAG "XINGZHI_CUBE_1_54TFT_WIFI"
