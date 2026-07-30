@@ -12,6 +12,14 @@
 #include <esp_lcd_nv3023.h>
 #include <driver/gpio.h>
 
+#ifndef ES8311_CODEC_DEFAULT_ADDR
+#define ES8311_CODEC_DEFAULT_ADDR 0x18
+#endif
+
+#ifndef AUDIO_CODEC_ES8311_ADDR
+#define AUDIO_CODEC_ES8311_ADDR ES8311_CODEC_DEFAULT_ADDR
+#endif
+
 #define TAG "MagiClick2P4Board"
 
 class MagiClick2P4Board : public WifiBoard {
@@ -28,7 +36,7 @@ private:
     int volume_ = 70;
 
     void InitializePower() {
-        // Energiza pantalla y perifericos (GPIO 39 activo en BAJO)
+        // Energiza la pantalla y perifericos (GPIO 39 activo en BAJO)
         gpio_reset_pin(BUILTIN_LED_POWER);
         gpio_set_direction(BUILTIN_LED_POWER, GPIO_MODE_OUTPUT);
         gpio_set_level(BUILTIN_LED_POWER, 0);
@@ -149,9 +157,22 @@ public:
         InitializePower();
         InitializeI2c();
 
-        audio_codec_ = new Es8311AudioCodec(i2c_bus_, AUDIO_CODEC_ES8311_ADDR, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
-            AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
-            AUDIO_CODEC_PA_PIN);
+        // 13 argumentos requeridos exactamente por Es8311AudioCodec:
+        audio_codec_ = new Es8311AudioCodec(
+            i2c_bus_,
+            I2C_NUM_0,
+            AUDIO_INPUT_SAMPLE_RATE,
+            AUDIO_OUTPUT_SAMPLE_RATE,
+            AUDIO_I2S_GPIO_MCLK,
+            AUDIO_I2S_GPIO_BCLK,
+            AUDIO_I2S_GPIO_WS,
+            AUDIO_I2S_GPIO_DOUT,
+            AUDIO_I2S_GPIO_DIN,
+            AUDIO_CODEC_PA_PIN,
+            AUDIO_CODEC_ES8311_ADDR,
+            true,
+            true
+        );
 
         InitializePowerSaveTimer();
         InitializeSpi();
