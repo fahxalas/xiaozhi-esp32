@@ -29,16 +29,32 @@ struct ConfigPrueba {
 };
 
 const ConfigPrueba LISTA_CONFIGS[] = {
-    {1, "MagiClick 2.4 Oficial (NV3023)", GPIO_NUM_15, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_14, GPIO_NUM_13, 0},
-    {2, "Cube / MagiClick 2.5 (NV3023)",   GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_13, GPIO_NUM_9,  GPIO_NUM_14, 0},
-    {3, "Cube 1.54 Clasico (ST7789)",      GPIO_NUM_13, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_11, GPIO_NUM_9,  GPIO_NUM_14, 1},
-    {4, "SPI Nativo ESP32-S3 (ST7789)",    GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_8,  GPIO_NUM_9,  GPIO_NUM_13, 1},
-    {5, "S3 Alt Pins (ST7789)",            GPIO_NUM_10, GPIO_NUM_9,  GPIO_NUM_14, GPIO_NUM_8,  GPIO_NUM_18, GPIO_NUM_13, 1}
+    {1, "MagiClick 2.4 (NV3023)",               GPIO_NUM_15, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_14, GPIO_NUM_13, 0},
+    {2, "MagiClick 2.4 (ST7789)",               GPIO_NUM_15, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_14, GPIO_NUM_13, 1},
+    {3, "MagiClick 2.4 MOSI/SCLK Invertido",    GPIO_NUM_16, GPIO_NUM_15, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_14, GPIO_NUM_13, 1},
+    {4, "Cube / MagiClick 2.5 (NV3023)",        GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_13, GPIO_NUM_9,  GPIO_NUM_14, 0},
+    {5, "Cube / MagiClick 2.5 (ST7789)",        GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_13, GPIO_NUM_9,  GPIO_NUM_14, 1},
+    {6, "Standard SPI S3 (ST7789)",             GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_8,  GPIO_NUM_9,  GPIO_NUM_13, 1},
+    {7, "Alt Pinout (ST7789)",                  GPIO_NUM_10, GPIO_NUM_9,  GPIO_NUM_14, GPIO_NUM_8,  GPIO_NUM_18, GPIO_NUM_13, 1}
 };
 
 class XINGZHI_CUBE_1_54TFT_WIFI : public WifiBoard {
 private:
     Button boot_button_;
+
+    static void EncenderTodaLaAlimentacion() {
+        // Energiza todas las líneas de alimentación secundarias de la placa
+        gpio_num_t pines_alta[] = {GPIO_NUM_4, GPIO_NUM_21, GPIO_NUM_38, GPIO_NUM_48};
+        for (auto pin : pines_alta) {
+            gpio_reset_pin(pin);
+            gpio_set_direction(pin, GPIO_MODE_OUTPUT);
+            gpio_set_level(pin, 1);
+        }
+        // Pin 39 (Alimentación activa en bajo)
+        gpio_reset_pin(GPIO_NUM_39);
+        gpio_set_direction(GPIO_NUM_39, GPIO_MODE_OUTPUT);
+        gpio_set_level(GPIO_NUM_39, 0);
+    }
 
     static void PintarPantallaPrueba(esp_lcd_panel_handle_t panel, uint16_t color) {
         uint16_t buffer[128 * 10];
@@ -49,14 +65,7 @@ private:
     }
 
     static void TaskEscanner(void* pvParameters) {
-        // Alimentacion auxiliar
-        gpio_reset_pin(GPIO_NUM_39);
-        gpio_set_direction(GPIO_NUM_39, GPIO_MODE_OUTPUT);
-        gpio_set_level(GPIO_NUM_39, 0);
-
-        gpio_reset_pin(GPIO_NUM_4);
-        gpio_set_direction(GPIO_NUM_4, GPIO_MODE_OUTPUT);
-        gpio_set_level(GPIO_NUM_4, 1);
+        EncenderTodaLaAlimentacion();
 
         int total_configs = sizeof(LISTA_CONFIGS) / sizeof(ConfigPrueba);
 
@@ -70,9 +79,18 @@ private:
                          (int)cfg.mosi, (int)cfg.sclk, (int)cfg.cs, (int)cfg.dc, (int)cfg.rst, (int)cfg.bl);
                 ESP_LOGI(TAG, "====================================================");
 
+                // Activar luz de fondo
                 gpio_reset_pin(cfg.bl);
                 gpio_set_direction(cfg.bl, GPIO_MODE_OUTPUT);
                 gpio_set_level(cfg.bl, 1);
+
+                // Activar Reset manualmente
+                gpio_reset_pin(cfg.rst);
+                gpio_set_direction(cfg.rst, GPIO_MODE_OUTPUT);
+                gpio_set_level(cfg.rst, 0);
+                vTaskDelay(pdMS_TO_TICKS(50));
+                gpio_set_level(cfg.rst, 1);
+                vTaskDelay(pdMS_TO_TICKS(50));
 
                 spi_bus_config_t buscfg = {};
                 buscfg.mosi_io_num = cfg.mosi;
@@ -94,7 +112,7 @@ private:
                 io_config.cs_gpio_num = cfg.cs;
                 io_config.dc_gpio_num = cfg.dc;
                 io_config.spi_mode = 0;
-                io_config.pclk_hz = 20 * 1000 * 1000;
+                io_config.pclk_hz = 10 * 1000 * 1000; // 10MHz para eliminar interferencias de ruido
                 io_config.trans_queue_depth = 10;
                 io_config.lcd_cmd_bits = 8;
                 io_config.lcd_param_bits = 8;
@@ -142,7 +160,6 @@ private:
 public:
     XINGZHI_CUBE_1_54TFT_WIFI() : boot_button_(BOOT_BUTTON_GPIO) {
         xTaskCreate(TaskEscanner, "TaskEscanner", 4096, NULL, 5, NULL);
-        // Pausamos el arranque del sistema operativo para evitar el crash por GetDisplay()
         vTaskDelay(portMAX_DELAY);
     }
 
