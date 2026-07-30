@@ -1,178 +1,130 @@
 #include "wifi_board.h"
 #include "codecs/no_audio_codec.h"
 #include "display/lcd_display.h"
+#include "system_reset.h"
+#include "application.h"
 #include "button.h"
 #include "config.h"
+#include "power_save_timer.h"
+#include "assets/lang_config.h"
 
 #include <esp_log.h>
-#include <driver/gpio.h>
-#include <driver/spi_master.h>
-#include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_vendor.h>
-#include <esp_lcd_panel_ops.h>
-#include <esp_lcd_nv3023.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
+#include <driver/gpio.h>
 
-#define TAG "SCANNER_PANTALLA"
-
-struct ConfigPrueba {
-    int id;
-    const char* nombre;
-    gpio_num_t mosi;
-    gpio_num_t sclk;
-    gpio_num_t cs;
-    gpio_num_t dc;
-    gpio_num_t rst;
-    gpio_num_t bl;
-    int driver; // 0 = NV3023, 1 = ST7789
-};
-
-const ConfigPrueba LISTA_CONFIGS[] = {
-    {1, "MagiClick 2.4 (NV3023)",               GPIO_NUM_15, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_14, GPIO_NUM_13, 0},
-    {2, "MagiClick 2.4 (ST7789)",               GPIO_NUM_15, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_14, GPIO_NUM_13, 1},
-    {3, "MagiClick 2.4 MOSI/SCLK Invertido",    GPIO_NUM_16, GPIO_NUM_15, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_14, GPIO_NUM_13, 1},
-    {4, "Cube / MagiClick 2.5 (NV3023)",        GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_13, GPIO_NUM_9,  GPIO_NUM_14, 0},
-    {5, "Cube / MagiClick 2.5 (ST7789)",        GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_13, GPIO_NUM_9,  GPIO_NUM_14, 1},
-    {6, "Standard SPI S3 (ST7789)",             GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_8,  GPIO_NUM_9,  GPIO_NUM_13, 1},
-    {7, "Alt Pinout (ST7789)",                  GPIO_NUM_10, GPIO_NUM_9,  GPIO_NUM_14, GPIO_NUM_8,  GPIO_NUM_18, GPIO_NUM_13, 1}
-};
+#define TAG "XINGZHI_CUBE_1_54TFT_WIFI"
 
 class XINGZHI_CUBE_1_54TFT_WIFI : public WifiBoard {
 private:
     Button boot_button_;
+    SpiLcdDisplay* display_;
+    PowerSaveTimer* power_save_timer_;
+    esp_lcd_panel_io_handle_t panel_io_ = nullptr;
+    esp_lcd_panel_handle_t panel_ = nullptr;
 
-    static void EncenderTodaLaAlimentacion() {
-        // Energiza todas las líneas de alimentación secundarias de la placa
-        gpio_num_t pines_alta[] = {GPIO_NUM_4, GPIO_NUM_21, GPIO_NUM_38, GPIO_NUM_48};
-        for (auto pin : pines_alta) {
-            gpio_reset_pin(pin);
-            gpio_set_direction(pin, GPIO_MODE_OUTPUT);
-            gpio_set_level(pin, 1);
-        }
-        // Pin 39 (Alimentación activa en bajo)
-        gpio_reset_pin(GPIO_NUM_39);
-        gpio_set_direction(GPIO_NUM_39, GPIO_MODE_OUTPUT);
-        gpio_set_level(GPIO_NUM_39, 0);
+    void InitializePowerSaveTimer() {
+        power_save_timer_ = new PowerSaveTimer(240, 60, -1);
+        power_save_timer_->OnEnterSleepMode([this]() {
+            GetDisplay()->SetPowerSaveMode(true);
+            GetBacklight()->SetBrightness(1);
+        });
+        power_save_timer_->OnExitSleepMode([this]() {
+            GetDisplay()->SetPowerSaveMode(false);
+            GetBacklight()->RestoreBrightness();
+        });
+        power_save_timer_->SetEnabled(true);
     }
 
-    static void PintarPantallaPrueba(esp_lcd_panel_handle_t panel, uint16_t color) {
-        uint16_t buffer[128 * 10];
-        for (int i = 0; i < 128 * 10; i++) buffer[i] = color;
-        for (int y = 0; y < 128; y += 10) {
-            esp_lcd_panel_draw_bitmap(panel, 0, y, 128, y + 10, buffer);
-        }
+    void InitializeSpi() {
+        spi_bus_config_t buscfg = {};
+        buscfg.mosi_io_num = DISPLAY_SDA;
+        buscfg.miso_io_num = GPIO_NUM_NC;
+        buscfg.sclk_io_num = DISPLAY_SCL;
+        buscfg.quadwp_io_num = GPIO_NUM_NC;
+        buscfg.quadhd_io_num = GPIO_NUM_NC;
+        buscfg.max_transfer_sz = DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t);
+        ESP_ERROR_CHECK(spi_bus_initialize(SPI3_HOST, &buscfg, SPI_DMA_CH_AUTO));
     }
 
-    static void TaskEscanner(void* pvParameters) {
-        EncenderTodaLaAlimentacion();
-
-        int total_configs = sizeof(LISTA_CONFIGS) / sizeof(ConfigPrueba);
-
-        while (true) {
-            for (int i = 0; i < total_configs; i++) {
-                auto cfg = LISTA_CONFIGS[i];
-                ESP_LOGI(TAG, " ");
-                ESP_LOGI(TAG, "====================================================");
-                ESP_LOGI(TAG, "🔍 PROBANDO CONFIGURACION #%d: [%s]", cfg.id, cfg.nombre);
-                ESP_LOGI(TAG, "   MOSI=%d, SCLK=%d, CS=%d, DC=%d, RST=%d, BL=%d", 
-                         (int)cfg.mosi, (int)cfg.sclk, (int)cfg.cs, (int)cfg.dc, (int)cfg.rst, (int)cfg.bl);
-                ESP_LOGI(TAG, "====================================================");
-
-                // Activar luz de fondo
-                gpio_reset_pin(cfg.bl);
-                gpio_set_direction(cfg.bl, GPIO_MODE_OUTPUT);
-                gpio_set_level(cfg.bl, 1);
-
-                // Activar Reset manualmente
-                gpio_reset_pin(cfg.rst);
-                gpio_set_direction(cfg.rst, GPIO_MODE_OUTPUT);
-                gpio_set_level(cfg.rst, 0);
-                vTaskDelay(pdMS_TO_TICKS(50));
-                gpio_set_level(cfg.rst, 1);
-                vTaskDelay(pdMS_TO_TICKS(50));
-
-                spi_bus_config_t buscfg = {};
-                buscfg.mosi_io_num = cfg.mosi;
-                buscfg.miso_io_num = GPIO_NUM_NC;
-                buscfg.sclk_io_num = cfg.sclk;
-                buscfg.quadwp_io_num = GPIO_NUM_NC;
-                buscfg.quadhd_io_num = GPIO_NUM_NC;
-                buscfg.max_transfer_sz = 128 * 128 * sizeof(uint16_t);
-
-                if (spi_bus_initialize(SPI3_HOST, &buscfg, SPI_DMA_CH_AUTO) != ESP_OK) {
-                    ESP_LOGE(TAG, "Error iniciando bus SPI");
-                    continue;
-                }
-
-                esp_lcd_panel_io_handle_t panel_io = nullptr;
-                esp_lcd_panel_handle_t panel = nullptr;
-
-                esp_lcd_panel_io_spi_config_t io_config = {};
-                io_config.cs_gpio_num = cfg.cs;
-                io_config.dc_gpio_num = cfg.dc;
-                io_config.spi_mode = 0;
-                io_config.pclk_hz = 10 * 1000 * 1000; // 10MHz para eliminar interferencias de ruido
-                io_config.trans_queue_depth = 10;
-                io_config.lcd_cmd_bits = 8;
-                io_config.lcd_param_bits = 8;
-
-                if (esp_lcd_new_panel_io_spi(SPI3_HOST, &io_config, &panel_io) == ESP_OK) {
-                    esp_lcd_panel_dev_config_t panel_config = {};
-                    panel_config.reset_gpio_num = cfg.rst;
-                    panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
-                    panel_config.bits_per_pixel = 16;
-
-                    esp_err_t ret = ESP_FAIL;
-                    if (cfg.driver == 0) {
-                        ret = esp_lcd_new_panel_nv3023(panel_io, &panel_config, &panel);
-                    } else {
-                        ret = esp_lcd_new_panel_st7789(panel_io, &panel_config, &panel);
-                    }
-
-                    if (ret == ESP_OK) {
-                        esp_lcd_panel_reset(panel);
-                        esp_lcd_panel_init(panel);
-                        esp_lcd_panel_disp_on_off(panel, true);
-
-                        ESP_LOGI(TAG, "--> Enviando ROJO");
-                        PintarPantallaPrueba(panel, 0xF800);
-                        vTaskDelay(pdMS_TO_TICKS(1500));
-
-                        ESP_LOGI(TAG, "--> Enviando VERDE");
-                        PintarPantallaPrueba(panel, 0x07E0);
-                        vTaskDelay(pdMS_TO_TICKS(1500));
-
-                        ESP_LOGI(TAG, "--> Enviando AZUL");
-                        PintarPantallaPrueba(panel, 0x001F);
-                        vTaskDelay(pdMS_TO_TICKS(1500));
-
-                        esp_lcd_panel_del(panel);
-                    }
-                    esp_lcd_panel_io_del(panel_io);
-                }
-                spi_bus_free(SPI3_HOST);
-                vTaskDelay(pdMS_TO_TICKS(1000));
+    void InitializeButtons() {
+        boot_button_.OnClick([this]() {
+            power_save_timer_->WakeUp();
+            auto& app = Application::GetInstance();
+            if (app.GetDeviceState() == kDeviceStateStarting) {
+                EnterWifiConfigMode();
+                return;
             }
-        }
+            app.ToggleChatState();
+        });
+        boot_button_.OnPressDown([this]() {
+            power_save_timer_->WakeUp();
+            Application::GetInstance().StartListening();
+        });
+        boot_button_.OnPressUp([this]() {
+            Application::GetInstance().StopListening();
+        });
+    }
+
+    void InitializeSt7789Display() {
+        ESP_LOGD(TAG, "Install panel IO");
+        esp_lcd_panel_io_spi_config_t io_config = {};
+        io_config.cs_gpio_num = DISPLAY_CS;
+        io_config.dc_gpio_num = DISPLAY_DC;
+        io_config.spi_mode = 0;
+        io_config.pclk_hz = 40 * 1000 * 1000;
+        io_config.trans_queue_depth = 10;
+        io_config.lcd_cmd_bits = 8;
+        io_config.lcd_param_bits = 8;
+        ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(SPI3_HOST, &io_config, &panel_io_));
+
+        ESP_LOGD(TAG, "Install LCD driver ST7789");
+        esp_lcd_panel_dev_config_t panel_config = {};
+        panel_config.reset_gpio_num = DISPLAY_RES;
+        panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
+        panel_config.bits_per_pixel = 16;
+        ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(panel_io_, &panel_config, &panel_));
+
+        esp_lcd_panel_reset(panel_);
+        esp_lcd_panel_init(panel_);
+        esp_lcd_panel_invert_color(panel_, true);
+        esp_lcd_panel_swap_xy(panel_, DISPLAY_SWAP_XY);
+        esp_lcd_panel_mirror(panel_, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
+        ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
+
+        display_ = new SpiLcdDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, 
+            DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
 public:
-    XINGZHI_CUBE_1_54TFT_WIFI() : boot_button_(BOOT_BUTTON_GPIO) {
-        xTaskCreate(TaskEscanner, "TaskEscanner", 4096, NULL, 5, NULL);
-        vTaskDelay(portMAX_DELAY);
+    XINGZHI_CUBE_1_54TFT_WIFI() :
+        boot_button_(BOOT_BUTTON_GPIO) {
+        InitializePowerSaveTimer();
+        InitializeSpi();
+        InitializeButtons();
+        InitializeSt7789Display();
+        GetBacklight()->RestoreBrightness();
     }
 
     virtual AudioCodec* GetAudioCodec() override {
-        static NoAudioCodecSimplex audio_codec(24000, 24000,
-            GPIO_NUM_9, GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_9, GPIO_NUM_11, GPIO_NUM_10);
+        static NoAudioCodecSimplex audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
+            AUDIO_I2S_SPK_GPIO_BCLK, AUDIO_I2S_SPK_GPIO_LRCK, AUDIO_I2S_SPK_GPIO_DOUT, AUDIO_I2S_MIC_GPIO_SCK, AUDIO_I2S_MIC_GPIO_WS, AUDIO_I2S_MIC_GPIO_DIN);
         return &audio_codec;
     }
 
-    virtual Display* GetDisplay() override { return nullptr; }
+    virtual Display* GetDisplay() override {
+        return display_;
+    }
+    
     virtual Backlight* GetBacklight() override {
-        static PwmBacklight backlight(GPIO_NUM_13, false);
+        static PwmBacklight backlight(DISPLAY_BACKLIGHT_PIN, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
         return &backlight;
+    }
+
+    virtual void SetPowerSaveLevel(PowerSaveLevel level) override {
+        if (level != PowerSaveLevel::LOW_POWER) {
+            power_save_timer_->WakeUp();
+        }
+        WifiBoard::SetPowerSaveLevel(level);
     }
 };
 
