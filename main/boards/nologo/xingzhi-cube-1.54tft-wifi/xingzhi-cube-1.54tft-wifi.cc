@@ -6,9 +6,12 @@
 #include "config.h"
 
 #include <esp_log.h>
-#include <esp_lcd_panel_vendor.h>
-#include <esp_lcd_nv3023.h>
 #include <driver/gpio.h>
+#include <driver/spi_master.h>
+#include <esp_lcd_panel_io.h>
+#include <esp_lcd_panel_vendor.h>
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_nv3023.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -26,21 +29,20 @@ struct ConfigPrueba {
     int driver; // 0 = NV3023, 1 = ST7789
 };
 
-// Lista de las 6 combinaciones más comunes en placas ESP32-S3
+// Combinaciones clave a probar
 const ConfigPrueba LISTA_CONFIGS[] = {
     {1, "MagiClick 2.4 Oficial (NV3023)", 15, 16, 17, 18, 14, 13, 0},
-    {2, "MagiClick 2.5 / S3 Genérico (NV3023)", 11, 12, 10, 13, 9, 14, 0},
-    {3, "Cube 1.54 Clásico (ST7789)", 13, 12, 10, 11, 9, 14, 1},
-    {4, "S3 SPI NATIVO Standard (ST7789)", 11, 12, 10, 8, 9, 13, 1},
-    {5, "S3 Alt Pins (ST7789)", 10, 9, 14, 8, 18, 13, 1},
-    {6, "MagiClick Variante Alt (NV3023)", 7, 15, 16, 6, 5, 13, 0}
+    {2, "Cube / MagiClick 2.5 (NV3023)",   11, 12, 10, 13,  9, 14, 0},
+    {3, "Cube 1.54 Clasico (ST7789)",      13, 12, 10, 11,  9, 14, 1},
+    {4, "SPI Nativo ESP32-S3 (ST7789)",    11, 12, 10,  8,  9, 13, 1},
+    {5, "S3 Alt Pins (ST7789)",            10,  9, 14,  8, 18, 13, 1}
 };
 
 class XINGZHI_CUBE_1_54TFT_WIFI : public WifiBoard {
 private:
     Button boot_button_;
 
-    void PintarPantallaPrueba(esp_lcd_panel_handle_t panel, uint16_t color) {
+    static void PintarPantallaPrueba(esp_lcd_panel_handle_t panel, uint16_t color) {
         uint16_t buffer[128 * 10];
         for (int i = 0; i < 128 * 10; i++) buffer[i] = color;
         for (int y = 0; y < 128; y += 10) {
@@ -48,8 +50,8 @@ private:
         }
     }
 
-    void EjecutarEscanner() {
-        // Enciende alimentación auxiliar (GPIO 39 y GPIO 4 por si acaso)
+    static void TaskEscanner(void* pvParameters) {
+        // Enciende alimentacion auxiliar de pantalla y audio (GPIO 39 y 4)
         gpio_reset_pin(GPIO_NUM_39);
         gpio_set_direction(GPIO_NUM_39, GPIO_MODE_OUTPUT);
         gpio_set_level(GPIO_NUM_39, 0);
@@ -70,12 +72,12 @@ private:
                          cfg.mosi, cfg.sclk, cfg.cs, cfg.dc, cfg.rst, cfg.bl);
                 ESP_LOGI(TAG, "====================================================");
 
-                // Configurar Backlight
+                // Control del Backlight
                 gpio_reset_pin((gpio_num_t)cfg.bl);
                 gpio_set_direction((gpio_num_t)cfg.bl, GPIO_MODE_OUTPUT);
                 gpio_set_level((gpio_num_t)cfg.bl, 1);
 
-                // Configurar Bus SPI
+                // Configuracion Bus SPI
                 spi_bus_config_t buscfg = {};
                 buscfg.mosi_io_num = cfg.mosi;
                 buscfg.miso_io_num = GPIO_NUM_NC;
@@ -83,7 +85,7 @@ private:
                 buscfg.quadwp_io_num = GPIO_NUM_NC;
                 buscfg.quadhd_io_num = GPIO_NUM_NC;
                 buscfg.max_transfer_sz = 128 * 128 * sizeof(uint16_t);
-                
+
                 if (spi_bus_initialize(SPI3_HOST, &buscfg, SPI_DMA_CH_AUTO) != ESP_OK) {
                     ESP_LOGE(TAG, "Error iniciando bus SPI");
                     continue;
@@ -96,7 +98,7 @@ private:
                 io_config.cs_gpio_num = cfg.cs;
                 io_config.dc_gpio_num = cfg.dc;
                 io_config.spi_mode = 0;
-                io_config.pclk_hz = 20 * 1000 * 1000; // 20MHz para máxima compatibilidad
+                io_config.pclk_hz = 20 * 1000 * 1000;
                 io_config.trans_queue_depth = 10;
                 io_config.lcd_cmd_bits = 8;
                 io_config.lcd_param_bits = 8;
@@ -119,17 +121,17 @@ private:
                         esp_lcd_panel_init(panel);
                         esp_lcd_panel_disp_on_off(panel, true);
 
-                        // Intenta pintar 3 colores
+                        // Pruebas de color
                         ESP_LOGI(TAG, "--> Enviando ROJO");
-                        PintarPantallaPrueba(panel, 0xF800); // Rojo
+                        PintarPantallaPrueba(panel, 0xF800);
                         vTaskDelay(pdMS_TO_TICKS(1000));
 
                         ESP_LOGI(TAG, "--> Enviando VERDE");
-                        PintarPantallaPrueba(panel, 0x07E0); // Verde
+                        PintarPantallaPrueba(panel, 0x07E0);
                         vTaskDelay(pdMS_TO_TICKS(1000));
 
                         ESP_LOGI(TAG, "--> Enviando AZUL");
-                        PintarPantallaPrueba(panel, 0x001F); // Azul
+                        PintarPantallaPrueba(panel, 0x001F);
                         vTaskDelay(pdMS_TO_TICKS(1000));
 
                         esp_lcd_panel_del(panel);
@@ -144,7 +146,7 @@ private:
 
 public:
     XINGZHI_CUBE_1_54TFT_WIFI() : boot_button_(BOOT_BUTTON_GPIO) {
-        EjecutarEscanner();
+        xTaskCreate(TaskEscanner, "TaskEscanner", 4096, NULL, 5, NULL);
     }
 
     virtual AudioCodec* GetAudioCodec() override {
