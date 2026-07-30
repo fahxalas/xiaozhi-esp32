@@ -6,7 +6,7 @@
 #define AUDIO_INPUT_SAMPLE_RATE   24000
 #define AUDIO_OUTPUT_SAMPLE_RATE  24000
 
-// --- AUDIO DIRECTO I2S (Sin chip ES8311) ---
+// --- AUDIO DIRECTO I2S ---
 #define AUDIO_I2S_SPK_GPIO_BCLK   GPIO_NUM_9
 #define AUDIO_I2S_SPK_GPIO_LRCK   GPIO_NUM_11
 #define AUDIO_I2S_SPK_GPIO_DOUT   GPIO_NUM_12
@@ -14,25 +14,30 @@
 #define AUDIO_I2S_MIC_GPIO_WS     GPIO_NUM_11
 #define AUDIO_I2S_MIC_GPIO_DIN    GPIO_NUM_10
 
-// --- BOTÓN FÍSICO ---
-#define BOOT_BUTTON_GPIO        GPIO_NUM_21
+// --- ENERGÍA DE PERIFÉRICOS ---
+#define BUILTIN_LED_POWER         GPIO_NUM_39
 
-// --- PINES DE PANTALLA CONFIRMADOS (Flex KC8690A) ---
-#define DISPLAY_SDA GPIO_NUM_15
-#define DISPLAY_SCL GPIO_NUM_16
-#define DISPLAY_CS  GPIO_NUM_17
-#define DISPLAY_DC  GPIO_NUM_18
-#define DISPLAY_RES GPIO_NUM_14
+// --- BOTONES FÍSICOS DE TU PCB ---
+#define BOOT_BUTTON_GPIO          GPIO_NUM_21
+#define LEFT_BUTTON_GPIO          GPIO_NUM_0
+#define RIGHT_BUTTON_GPIO         GPIO_NUM_47
 
-#define DISPLAY_WIDTH   240
-#define DISPLAY_HEIGHT  240
-#define DISPLAY_SWAP_XY  false
-#define DISPLAY_MIRROR_X false
-#define DISPLAY_MIRROR_Y false
-#define DISPLAY_OFFSET_X  0
-#define DISPLAY_OFFSET_Y  0
+// --- PINES DE PANTALLA (Flex KC8690A / NV3023) ---
+#define DISPLAY_SDA               GPIO_NUM_15
+#define DISPLAY_SCL               GPIO_NUM_16
+#define DISPLAY_CS                GPIO_NUM_17
+#define DISPLAY_DC                GPIO_NUM_18
+#define DISPLAY_RES               GPIO_NUM_14
 
-#define DISPLAY_BACKLIGHT_PIN GPIO_NUM_13
+#define DISPLAY_WIDTH             128
+#define DISPLAY_HEIGHT            128
+#define DISPLAY_SWAP_XY           false
+#define DISPLAY_MIRROR_X          false
+#define DISPLAY_MIRROR_Y          true
+#define DISPLAY_OFFSET_X          0
+#define DISPLAY_OFFSET_Y          0
+
+#define DISPLAY_BACKLIGHT_PIN     GPIO_NUM_13
 #define DISPLAY_BACKLIGHT_OUTPUT_INVERT false
 
 #endif // _BOARD_CONFIG_H_
