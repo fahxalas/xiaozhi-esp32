@@ -20,22 +20,22 @@
 struct ConfigPrueba {
     int id;
     const char* nombre;
-    int mosi;
-    int sclk;
-    int cs;
-    int dc;
-    int rst;
-    int bl;
+    gpio_num_t mosi;
+    gpio_num_t sclk;
+    gpio_num_t cs;
+    gpio_num_t dc;
+    gpio_num_t rst;
+    gpio_num_t bl;
     int driver; // 0 = NV3023, 1 = ST7789
 };
 
-// Combinaciones clave a probar
+// Combinaciones clave a probar usando gpio_num_t explícito
 const ConfigPrueba LISTA_CONFIGS[] = {
-    {1, "MagiClick 2.4 Oficial (NV3023)", 15, 16, 17, 18, 14, 13, 0},
-    {2, "Cube / MagiClick 2.5 (NV3023)",   11, 12, 10, 13,  9, 14, 0},
-    {3, "Cube 1.54 Clasico (ST7789)",      13, 12, 10, 11,  9, 14, 1},
-    {4, "SPI Nativo ESP32-S3 (ST7789)",    11, 12, 10,  8,  9, 13, 1},
-    {5, "S3 Alt Pins (ST7789)",            10,  9, 14,  8, 18, 13, 1}
+    {1, "MagiClick 2.4 Oficial (NV3023)", GPIO_NUM_15, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_14, GPIO_NUM_13, 0},
+    {2, "Cube / MagiClick 2.5 (NV3023)",   GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_13, GPIO_NUM_9,  GPIO_NUM_14, 0},
+    {3, "Cube 1.54 Clasico (ST7789)",      GPIO_NUM_13, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_11, GPIO_NUM_9,  GPIO_NUM_14, 1},
+    {4, "SPI Nativo ESP32-S3 (ST7789)",    GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_8,  GPIO_NUM_9,  GPIO_NUM_13, 1},
+    {5, "S3 Alt Pins (ST7789)",            GPIO_NUM_10, GPIO_NUM_9,  GPIO_NUM_14, GPIO_NUM_8,  GPIO_NUM_18, GPIO_NUM_13, 1}
 };
 
 class XINGZHI_CUBE_1_54TFT_WIFI : public WifiBoard {
@@ -69,13 +69,13 @@ private:
                 ESP_LOGI(TAG, "====================================================");
                 ESP_LOGI(TAG, "🔍 PROBANDO CONFIGURACION #%d: [%s]", cfg.id, cfg.nombre);
                 ESP_LOGI(TAG, "   MOSI=%d, SCLK=%d, CS=%d, DC=%d, RST=%d, BL=%d", 
-                         cfg.mosi, cfg.sclk, cfg.cs, cfg.dc, cfg.rst, cfg.bl);
+                         (int)cfg.mosi, (int)cfg.sclk, (int)cfg.cs, (int)cfg.dc, (int)cfg.rst, (int)cfg.bl);
                 ESP_LOGI(TAG, "====================================================");
 
                 // Control del Backlight
-                gpio_reset_pin((gpio_num_t)cfg.bl);
-                gpio_set_direction((gpio_num_t)cfg.bl, GPIO_MODE_OUTPUT);
-                gpio_set_level((gpio_num_t)cfg.bl, 1);
+                gpio_reset_pin(cfg.bl);
+                gpio_set_direction(cfg.bl, GPIO_MODE_OUTPUT);
+                gpio_set_level(cfg.bl, 1);
 
                 // Configuracion Bus SPI
                 spi_bus_config_t buscfg = {};
