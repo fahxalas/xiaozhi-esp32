@@ -5,7 +5,7 @@
 #include "button.h"
 #include "config.h"
 #include "power_save_timer.h"
-#include "i2c_device.h"
+#include <i2c_bus.h>
 
 #include <esp_log.h>
 #include <esp_lcd_panel_vendor.h>
@@ -14,71 +14,39 @@
 
 #define TAG "MagiClick2P4Board"
 
-class NV3023Display : public SpiLcdDisplay {
-public:
-    NV3023Display(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
-                int width, int height, int offset_x, int offset_y, bool mirror_x, bool mirror_y, bool swap_xy)
-        : SpiLcdDisplay(panel_io, panel, width, height, offset_x, offset_y, mirror_x, mirror_y, swap_xy) {
-    }
-
-    void SetupUI() override {
-        SpiLcdDisplay::SetupUI();
-
-        auto screen = lv_disp_get_scr_act(lv_disp_get_default());
-        if (screen != nullptr) {
-            lv_obj_set_style_text_color(screen, lv_color_black(), 0);
-        }
-        if (container_ != nullptr) {
-            lv_obj_set_style_bg_color(container_, lv_color_black(), 0);
-        }
-        if (status_bar_ != nullptr) {
-            lv_obj_set_style_bg_color(status_bar_, lv_color_white(), 0);
-        }
-        if (network_label_ != nullptr) {
-            lv_obj_set_style_text_color(network_label_, lv_color_black(), 0);
-        }
-        if (notification_label_ != nullptr) {
-            lv_obj_set_style_text_color(notification_label_, lv_color_black(), 0);
-        }
-        if (status_label_ != nullptr) {
-            lv_obj_set_style_text_color(status_label_, lv_color_black(), 0);
-        }
-        if (mute_label_ != nullptr) {
-            lv_obj_set_style_text_color(mute_label_, lv_color_black(), 0);
-        }
-        if (battery_label_ != nullptr) {
-            lv_obj_set_style_text_color(battery_label_, lv_color_black(), 0);
-        }
-        if (content_ != nullptr) {
-            lv_obj_set_style_bg_color(content_, lv_color_black(), 0);
-            lv_obj_set_style_border_width(content_, 0, 0);
-        }
-        if (emoji_label_ != nullptr) {
-            lv_obj_set_style_text_color(emoji_label_, lv_color_white(), 0);
-        }
-        if (chat_message_label_ != nullptr) {
-            lv_obj_set_style_text_color(chat_message_label_, lv_color_white(), 0);
-        }
-    }
-};
-
 class MagiClick2P4Board : public WifiBoard {
 private:
-    I2cBus* i2c_bus_ = nullptr;
+    i2c_bus_handle_t i2c_bus_ = nullptr;
     Es8311AudioCodec* audio_codec_ = nullptr;
     Button main_button_;
     Button left_button_;
     Button right_button_;
-    NV3023Display* display_ = nullptr;
+    SpiLcdDisplay* display_ = nullptr;
     PowerSaveTimer* power_save_timer_ = nullptr;
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
+    int volume_ = 70;
 
     void InitializePower() {
-        // Enciende alimentacion de la pantalla y perifericos (GPIO 39 activo en BAJO)
+        // Energiza pantalla y perifericos (GPIO 39 activo en BAJO)
         gpio_reset_pin(BUILTIN_LED_POWER);
         gpio_set_direction(BUILTIN_LED_POWER, GPIO_MODE_OUTPUT);
         gpio_set_level(BUILTIN_LED_POWER, 0);
+    }
+
+    void InitializeI2c() {
+        i2c_config_t i2c_cfg = {
+            .mode = I2C_MODE_MASTER,
+            .sda_io_num = AUDIO_CODEC_I2C_SDA_PIN,
+            .scl_io_num = AUDIO_CODEC_I2C_SCL_PIN,
+            .sda_pullup_en = GPIO_PULLUP_ENABLE,
+            .scl_pullup_en = GPIO_PULLUP_ENABLE,
+            .master = {
+                .clk_speed = 100000,
+            },
+            .clk_flags = 0,
+        };
+        i2c_bus_ = i2c_bus_create(I2C_NUM_0, &i2c_cfg);
     }
 
     void InitializePowerSaveTimer() {
@@ -125,21 +93,19 @@ private:
 
         left_button_.OnClick([this]() {
             power_save_timer_->WakeUp();
-            auto codec = GetAudioCodec();
-            if (codec != nullptr) {
-                auto volume = codec->GetOutputVolume() - 10;
-                if (volume < 0) volume = 0;
-                codec->SetOutputVolume(volume);
+            volume_ -= 10;
+            if (volume_ < 0) volume_ = 0;
+            if (audio_codec_ != nullptr) {
+                audio_codec_->SetOutputVolume(volume_);
             }
         });
 
         right_button_.OnClick([this]() {
             power_save_timer_->WakeUp();
-            auto codec = GetAudioCodec();
-            if (codec != nullptr) {
-                auto volume = codec->GetOutputVolume() + 10;
-                if (volume > 100) volume = 100;
-                codec->SetOutputVolume(volume);
+            volume_ += 10;
+            if (volume_ > 100) volume_ = 100;
+            if (audio_codec_ != nullptr) {
+                audio_codec_->SetOutputVolume(volume_);
             }
         });
     }
@@ -170,7 +136,7 @@ private:
         esp_lcd_panel_mirror(panel_, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
 
-        display_ = new NV3023Display(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, 
+        display_ = new SpiLcdDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, 
             DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
@@ -181,11 +147,11 @@ public:
         right_button_(RIGHT_BUTTON_GPIO) {
         
         InitializePower();
+        InitializeI2c();
 
-        i2c_bus_ = new I2cBus(I2C_NUM_0, AUDIO_CODEC_I2C_SDA_PIN, AUDIO_CODEC_I2C_SCL_PIN);
-        audio_codec_ = new Es8311AudioCodec(*i2c_bus_, AUDIO_CODEC_ES8311_ADDR, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
+        audio_codec_ = new Es8311AudioCodec(i2c_bus_, AUDIO_CODEC_ES8311_ADDR, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
-            AUDIO_CODEC_PA_PIN, AUDIO_CODEC_ES8311_ADDR);
+            AUDIO_CODEC_PA_PIN);
 
         InitializePowerSaveTimer();
         InitializeSpi();
