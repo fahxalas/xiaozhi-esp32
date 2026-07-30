@@ -8,6 +8,7 @@
 
 #include <esp_log.h>
 #include <esp_lcd_panel_vendor.h>
+#include <esp_lcd_nv3023.h>
 #include <driver/gpio.h>
 
 #define TAG "XINGZHI_CUBE_1_54TFT_WIFI"
@@ -15,16 +16,23 @@
 class XINGZHI_CUBE_1_54TFT_WIFI : public WifiBoard {
 private:
     Button boot_button_;
+    Button left_button_;
+    Button right_button_;
     SpiLcdDisplay* display_ = nullptr;
     PowerSaveTimer* power_save_timer_ = nullptr;
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
 
     void InitializeHardwarePower() {
-        // Enciende la alimentación principal de la pantalla y periféricos (GPIO 39 activo en BAJO)
+        // 1. Energiza la lógica de la pantalla (GPIO 39 activo en BAJO)
         gpio_reset_pin(BUILTIN_LED_POWER);
         gpio_set_direction(BUILTIN_LED_POWER, GPIO_MODE_OUTPUT);
         gpio_set_level(BUILTIN_LED_POWER, 0);
+
+        // 2. Enciende el Amplificador de Audio PA (GPIO 4 activo en ALTO)
+        gpio_reset_pin(AUDIO_CODEC_PA_PIN);
+        gpio_set_direction(AUDIO_CODEC_PA_PIN, GPIO_MODE_OUTPUT);
+        gpio_set_level(AUDIO_CODEC_PA_PIN, 1);
     }
 
     void InitializePowerSaveTimer() {
@@ -68,6 +76,20 @@ private:
         boot_button_.OnPressUp([this]() {
             Application::GetInstance().StopListening();
         });
+
+        left_button_.OnClick([this]() {
+            power_save_timer_->WakeUp();
+            auto& app = Application::GetInstance();
+            if (app.GetDeviceState() == kDeviceStateStarting || app.GetDeviceState() == kDeviceStateWifiConfiguring) {
+                EnterWifiConfigMode();
+                return;
+            }
+            app.ToggleChatState();
+        });
+
+        right_button_.OnClick([this]() {
+            power_save_timer_->WakeUp();
+        });
     }
 
     void InitializeDisplay() {
@@ -76,22 +98,22 @@ private:
         io_config.cs_gpio_num = DISPLAY_CS;
         io_config.dc_gpio_num = DISPLAY_DC;
         io_config.spi_mode = 0;
-        io_config.pclk_hz = 40 * 1000 * 1000;
+        io_config.pclk_hz = 20 * 1000 * 1000; // 20 MHz para el controlador NV3023
         io_config.trans_queue_depth = 10;
         io_config.lcd_cmd_bits = 8;
         io_config.lcd_param_bits = 8;
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(SPI3_HOST, &io_config, &panel_io_));
 
-        ESP_LOGD(TAG, "Install LCD driver ST7789");
+        ESP_LOGD(TAG, "Install LCD driver NV3023");
         esp_lcd_panel_dev_config_t panel_config = {};
         panel_config.reset_gpio_num = DISPLAY_RES;
         panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
         panel_config.bits_per_pixel = 16;
-        ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(panel_io_, &panel_config, &panel_));
+        ESP_ERROR_CHECK(esp_lcd_new_panel_nv3023(panel_io_, &panel_config, &panel_));
 
         esp_lcd_panel_reset(panel_);
         esp_lcd_panel_init(panel_);
-        esp_lcd_panel_invert_color(panel_, true);
+        esp_lcd_panel_invert_color(panel_, false);
         esp_lcd_panel_swap_xy(panel_, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel_, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
@@ -101,7 +123,11 @@ private:
     }
 
 public:
-    XINGZHI_CUBE_1_54TFT_WIFI() : boot_button_(BOOT_BUTTON_GPIO) {
+    XINGZHI_CUBE_1_54TFT_WIFI() : 
+        boot_button_(BOOT_BUTTON_GPIO),
+        left_button_(LEFT_BUTTON_GPIO),
+        right_button_(RIGHT_BUTTON_GPIO) {
+        
         InitializeHardwarePower();
         InitializePowerSaveTimer();
         InitializeSpi();
@@ -111,7 +137,6 @@ public:
     }
 
     virtual AudioCodec* GetAudioCodec() override {
-        // Usa NoAudioCodecDuplex para compartir el reloj I2S sin conflictos de GPIO
         static NoAudioCodecDuplex audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN);
         return &audio_codec;
