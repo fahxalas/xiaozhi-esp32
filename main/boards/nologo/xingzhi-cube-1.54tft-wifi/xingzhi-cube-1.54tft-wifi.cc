@@ -1,15 +1,14 @@
 #include "wifi_board.h"
 #include "codecs/no_audio_codec.h"
 #include "display/lcd_display.h"
-#include "system_reset.h"
 #include "application.h"
 #include "button.h"
 #include "config.h"
 #include "power_save_timer.h"
-#include "assets/lang_config.h"
 
 #include <esp_log.h>
 #include <esp_lcd_panel_vendor.h>
+#include <esp_lcd_st7789.h>
 #include <driver/gpio.h>
 
 #define TAG "XINGZHI_CUBE_1_54TFT_WIFI"
@@ -17,10 +16,17 @@
 class XINGZHI_CUBE_1_54TFT_WIFI : public WifiBoard {
 private:
     Button boot_button_;
-    SpiLcdDisplay* display_;
-    PowerSaveTimer* power_save_timer_;
+    SpiLcdDisplay* display_ = nullptr;
+    PowerSaveTimer* power_save_timer_ = nullptr;
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
+
+    void InitializeHardwarePower() {
+        // Energiza la línea lógica de la pantalla (GPIO 39 activo en BAJO)
+        gpio_reset_pin(GPIO_NUM_39);
+        gpio_set_direction(GPIO_NUM_39, GPIO_MODE_OUTPUT);
+        gpio_set_level(GPIO_NUM_39, 0);
+    }
 
     void InitializePowerSaveTimer() {
         power_save_timer_ = new PowerSaveTimer(240, 60, -1);
@@ -65,7 +71,7 @@ private:
         });
     }
 
-    void InitializeSt7789Display() {
+    void InitializeDisplay() {
         ESP_LOGD(TAG, "Install panel IO");
         esp_lcd_panel_io_spi_config_t io_config = {};
         io_config.cs_gpio_num = DISPLAY_CS;
@@ -96,12 +102,12 @@ private:
     }
 
 public:
-    XINGZHI_CUBE_1_54TFT_WIFI() :
-        boot_button_(BOOT_BUTTON_GPIO) {
+    XINGZHI_CUBE_1_54TFT_WIFI() : boot_button_(BOOT_BUTTON_GPIO) {
+        InitializeHardwarePower();
         InitializePowerSaveTimer();
         InitializeSpi();
         InitializeButtons();
-        InitializeSt7789Display();
+        InitializeDisplay();
         GetBacklight()->RestoreBrightness();
     }
 
