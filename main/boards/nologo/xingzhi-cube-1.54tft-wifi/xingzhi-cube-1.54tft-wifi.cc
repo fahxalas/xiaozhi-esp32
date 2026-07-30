@@ -8,6 +8,7 @@
 
 #include <esp_log.h>
 #include <esp_lcd_panel_vendor.h>
+#include <esp_lcd_nv3023.h>
 #include <driver/gpio.h>
 
 #define TAG "XINGZHI_CUBE_1_54TFT_WIFI"
@@ -15,16 +16,18 @@
 class XINGZHI_CUBE_1_54TFT_WIFI : public WifiBoard {
 private:
     Button boot_button_;
+    Button left_button_;
+    Button right_button_;
     SpiLcdDisplay* display_ = nullptr;
     PowerSaveTimer* power_save_timer_ = nullptr;
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
 
     void InitializeHardwarePower() {
-        // Energiza la línea lógica de la pantalla (GPIO 39 activo en BAJO)
-        gpio_reset_pin(GPIO_NUM_39);
-        gpio_set_direction(GPIO_NUM_39, GPIO_MODE_OUTPUT);
-        gpio_set_level(GPIO_NUM_39, 0);
+        // Enciende la alimentación principal de periféricos y LCD (GPIO 39 activo en BAJO)
+        gpio_reset_pin(BUILTIN_LED_POWER);
+        gpio_set_direction(BUILTIN_LED_POWER, GPIO_MODE_OUTPUT);
+        gpio_set_level(BUILTIN_LED_POWER, 0);
     }
 
     void InitializePowerSaveTimer() {
@@ -55,7 +58,7 @@ private:
         boot_button_.OnClick([this]() {
             power_save_timer_->WakeUp();
             auto& app = Application::GetInstance();
-            if (app.GetDeviceState() == kDeviceStateStarting) {
+            if (app.GetDeviceState() == kDeviceStateStarting || app.GetDeviceState() == kDeviceStateWifiConfiguring) {
                 EnterWifiConfigMode();
                 return;
             }
@@ -67,6 +70,20 @@ private:
         });
         boot_button_.OnPressUp([this]() {
             Application::GetInstance().StopListening();
+        });
+
+        left_button_.OnClick([this]() {
+            power_save_timer_->WakeUp();
+            auto& app = Application::GetInstance();
+            if (app.GetDeviceState() == kDeviceStateStarting || app.GetDeviceState() == kDeviceStateWifiConfiguring) {
+                EnterWifiConfigMode();
+                return;
+            }
+            app.ToggleChatState();
+        });
+
+        right_button_.OnClick([this]() {
+            power_save_timer_->WakeUp();
         });
     }
 
@@ -82,16 +99,16 @@ private:
         io_config.lcd_param_bits = 8;
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(SPI3_HOST, &io_config, &panel_io_));
 
-        ESP_LOGD(TAG, "Install LCD driver ST7789");
+        ESP_LOGD(TAG, "Install LCD driver NV3023");
         esp_lcd_panel_dev_config_t panel_config = {};
         panel_config.reset_gpio_num = DISPLAY_RES;
         panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
         panel_config.bits_per_pixel = 16;
-        ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(panel_io_, &panel_config, &panel_));
+        ESP_ERROR_CHECK(esp_lcd_new_panel_nv3023(panel_io_, &panel_config, &panel_));
 
         esp_lcd_panel_reset(panel_);
         esp_lcd_panel_init(panel_);
-        esp_lcd_panel_invert_color(panel_, true);
+        esp_lcd_panel_invert_color(panel_, false);
         esp_lcd_panel_swap_xy(panel_, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel_, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
@@ -101,7 +118,11 @@ private:
     }
 
 public:
-    XINGZHI_CUBE_1_54TFT_WIFI() : boot_button_(BOOT_BUTTON_GPIO) {
+    XINGZHI_CUBE_1_54TFT_WIFI() : 
+        boot_button_(BOOT_BUTTON_GPIO),
+        left_button_(LEFT_BUTTON_GPIO),
+        right_button_(RIGHT_BUTTON_GPIO) {
+        
         InitializeHardwarePower();
         InitializePowerSaveTimer();
         InitializeSpi();
