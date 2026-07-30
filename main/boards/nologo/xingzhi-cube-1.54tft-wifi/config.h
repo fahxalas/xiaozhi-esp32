@@ -21,18 +21,18 @@
 #define LEFT_BUTTON_GPIO          GPIO_NUM_0
 #define RIGHT_BUTTON_GPIO         GPIO_NUM_47
 
-// --- PINES Y RESOLUCIÓN REAL (NV3023 / 128x128) ---
+// --- PINES Y RESOLUCIÓN REAL (ST7789 / 240x240) ---
 #define DISPLAY_SDA               GPIO_NUM_15
 #define DISPLAY_SCL               GPIO_NUM_16
 #define DISPLAY_CS                GPIO_NUM_17
 #define DISPLAY_DC                GPIO_NUM_18
 #define DISPLAY_RES               GPIO_NUM_14
 
-#define DISPLAY_WIDTH             128
-#define DISPLAY_HEIGHT            128
+#define DISPLAY_WIDTH             240
+#define DISPLAY_HEIGHT            240
 #define DISPLAY_SWAP_XY           false
 #define DISPLAY_MIRROR_X          false
-#define DISPLAY_MIRROR_Y          true
+#define DISPLAY_MIRROR_Y          false
 #define DISPLAY_OFFSET_X          0
 #define DISPLAY_OFFSET_Y          0
 
