@@ -24,7 +24,6 @@ public:
     void SetupUI() override {
         SpiLcdDisplay::SetupUI();
 
-        // Se remueve DisplayLockGuard para evitar el colapso de memoria al arrancar LVGL
         auto screen = lv_disp_get_scr_act(lv_disp_get_default());
         if (screen != nullptr) {
             lv_obj_set_style_text_color(screen, lv_color_black(), 0);
@@ -65,14 +64,22 @@ public:
 
 class MagiClick2P4Board : public WifiBoard {
 private:
-    I2cBus i2c_bus_;
-    Button boot_button_;
-    Button touch_button_;
-    Button volume_up_button_;
+    I2cBus* i2c_bus_ = nullptr;
+    Es8311AudioCodec* audio_codec_ = nullptr;
+    Button main_button_;
+    Button left_button_;
+    Button right_button_;
     NV3023Display* display_ = nullptr;
     PowerSaveTimer* power_save_timer_ = nullptr;
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
+
+    void InitializePower() {
+        // Enciende alimentacion de la pantalla y perifericos (GPIO 39 activo en BAJO)
+        gpio_reset_pin(BUILTIN_LED_POWER);
+        gpio_set_direction(BUILTIN_LED_POWER, GPIO_MODE_OUTPUT);
+        gpio_set_level(BUILTIN_LED_POWER, 0);
+    }
 
     void InitializePowerSaveTimer() {
         power_save_timer_ = new PowerSaveTimer(240, 60, -1);
@@ -89,9 +96,9 @@ private:
 
     void InitializeSpi() {
         spi_bus_config_t buscfg = {};
-        buscfg.mosi_io_num = DISPLAY_SDA;
+        buscfg.mosi_io_num = DISPLAY_SDA_PIN;
         buscfg.miso_io_num = GPIO_NUM_NC;
-        buscfg.sclk_io_num = DISPLAY_SCL;
+        buscfg.sclk_io_num = DISPLAY_SCL_PIN;
         buscfg.quadwp_io_num = GPIO_NUM_NC;
         buscfg.quadhd_io_num = GPIO_NUM_NC;
         buscfg.max_transfer_sz = DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t);
@@ -99,7 +106,7 @@ private:
     }
 
     void InitializeButtons() {
-        boot_button_.OnClick([this]() {
+        main_button_.OnClick([this]() {
             power_save_timer_->WakeUp();
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting) {
@@ -108,38 +115,40 @@ private:
             }
             app.ToggleChatState();
         });
-        boot_button_.OnPressDown([this]() {
+        main_button_.OnPressDown([this]() {
             power_save_timer_->WakeUp();
             Application::GetInstance().StartListening();
         });
-        boot_button_.OnPressUp([this]() {
+        main_button_.OnPressUp([this]() {
             Application::GetInstance().StopListening();
         });
 
-        touch_button_.OnClick([this]() {
-            power_save_timer_->WakeUp();
-            auto& app = Application::GetInstance();
-            if (app.GetDeviceState() == kDeviceStateStarting) {
-                EnterWifiConfigMode();
-                return;
-            }
-            app.ToggleChatState();
-        });
-
-        volume_up_button_.OnClick([this]() {
+        left_button_.OnClick([this]() {
             power_save_timer_->WakeUp();
             auto codec = GetAudioCodec();
-            auto volume = codec->GetOutputVolume() + 10;
-            if (volume > 100) volume = 100;
-            codec->SetOutputVolume(volume);
+            if (codec != nullptr) {
+                auto volume = codec->GetOutputVolume() - 10;
+                if (volume < 0) volume = 0;
+                codec->SetOutputVolume(volume);
+            }
+        });
+
+        right_button_.OnClick([this]() {
+            power_save_timer_->WakeUp();
+            auto codec = GetAudioCodec();
+            if (codec != nullptr) {
+                auto volume = codec->GetOutputVolume() + 10;
+                if (volume > 100) volume = 100;
+                codec->SetOutputVolume(volume);
+            }
         });
     }
 
     void InitializeNv3023Display() {
         ESP_LOGD(TAG, "Install panel IO");
         esp_lcd_panel_io_spi_config_t io_config = {};
-        io_config.cs_gpio_num = DISPLAY_CS;
-        io_config.dc_gpio_num = DISPLAY_DC;
+        io_config.cs_gpio_num = DISPLAY_CS_PIN;
+        io_config.dc_gpio_num = DISPLAY_DC_PIN;
         io_config.spi_mode = 0;
         io_config.pclk_hz = 40 * 1000 * 1000;
         io_config.trans_queue_depth = 10;
@@ -149,7 +158,7 @@ private:
 
         ESP_LOGD(TAG, "Install LCD driver NV3023");
         esp_lcd_panel_dev_config_t panel_config = {};
-        panel_config.reset_gpio_num = DISPLAY_RES;
+        panel_config.reset_gpio_num = DISPLAY_RST_PIN;
         panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
         panel_config.bits_per_pixel = 16;
         ESP_ERROR_CHECK(esp_lcd_new_panel_nv3023(panel_io_, &panel_config, &panel_));
@@ -167,10 +176,17 @@ private:
 
 public:
     MagiClick2P4Board() :
-        i2c_bus_(I2C_NUM_0, AUDIO_CODEC_I2C_SDA_PIN, AUDIO_CODEC_I2C_SCL_PIN),
-        boot_button_(BOOT_BUTTON_GPIO),
-        touch_button_(TOUCH_BUTTON_GPIO),
-        volume_up_button_(VOLUME_UP_BUTTON_GPIO) {
+        main_button_(MAIN_BUTTON_GPIO),
+        left_button_(LEFT_BUTTON_GPIO),
+        right_button_(RIGHT_BUTTON_GPIO) {
+        
+        InitializePower();
+
+        i2c_bus_ = new I2cBus(I2C_NUM_0, AUDIO_CODEC_I2C_SDA_PIN, AUDIO_CODEC_I2C_SCL_PIN);
+        audio_codec_ = new Es8311AudioCodec(*i2c_bus_, AUDIO_CODEC_ES8311_ADDR, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
+            AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
+            AUDIO_CODEC_PA_PIN, AUDIO_CODEC_ES8311_ADDR);
+
         InitializePowerSaveTimer();
         InitializeSpi();
         InitializeButtons();
@@ -179,10 +195,7 @@ public:
     }
 
     virtual AudioCodec* GetAudioCodec() override {
-        static Es8311AudioCodec audio_codec(i2c_bus_, AUDIO_CODEC_ES8311_ADDR, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
-            AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_LRCK, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
-            AUDIO_CODEC_PA_PIN, AUDIO_CODEC_ES8311_ADDR);
-        return &audio_codec;
+        return audio_codec_;
     }
 
     virtual Display* GetDisplay() override {
