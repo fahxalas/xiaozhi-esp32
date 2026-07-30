@@ -1,7 +1,6 @@
 #include "wifi_board.h"
 #include "codecs/no_audio_codec.h"
 #include "display/lcd_display.h"
-#include "application.h"
 #include "button.h"
 #include "config.h"
 
@@ -29,7 +28,6 @@ struct ConfigPrueba {
     int driver; // 0 = NV3023, 1 = ST7789
 };
 
-// Combinaciones clave a probar usando gpio_num_t explícito
 const ConfigPrueba LISTA_CONFIGS[] = {
     {1, "MagiClick 2.4 Oficial (NV3023)", GPIO_NUM_15, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_14, GPIO_NUM_13, 0},
     {2, "Cube / MagiClick 2.5 (NV3023)",   GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_10, GPIO_NUM_13, GPIO_NUM_9,  GPIO_NUM_14, 0},
@@ -51,7 +49,7 @@ private:
     }
 
     static void TaskEscanner(void* pvParameters) {
-        // Enciende alimentacion auxiliar de pantalla y audio (GPIO 39 y 4)
+        // Alimentacion auxiliar
         gpio_reset_pin(GPIO_NUM_39);
         gpio_set_direction(GPIO_NUM_39, GPIO_MODE_OUTPUT);
         gpio_set_level(GPIO_NUM_39, 0);
@@ -72,12 +70,10 @@ private:
                          (int)cfg.mosi, (int)cfg.sclk, (int)cfg.cs, (int)cfg.dc, (int)cfg.rst, (int)cfg.bl);
                 ESP_LOGI(TAG, "====================================================");
 
-                // Control del Backlight
                 gpio_reset_pin(cfg.bl);
                 gpio_set_direction(cfg.bl, GPIO_MODE_OUTPUT);
                 gpio_set_level(cfg.bl, 1);
 
-                // Configuracion Bus SPI
                 spi_bus_config_t buscfg = {};
                 buscfg.mosi_io_num = cfg.mosi;
                 buscfg.miso_io_num = GPIO_NUM_NC;
@@ -121,18 +117,17 @@ private:
                         esp_lcd_panel_init(panel);
                         esp_lcd_panel_disp_on_off(panel, true);
 
-                        // Pruebas de color
                         ESP_LOGI(TAG, "--> Enviando ROJO");
                         PintarPantallaPrueba(panel, 0xF800);
-                        vTaskDelay(pdMS_TO_TICKS(1000));
+                        vTaskDelay(pdMS_TO_TICKS(1500));
 
                         ESP_LOGI(TAG, "--> Enviando VERDE");
                         PintarPantallaPrueba(panel, 0x07E0);
-                        vTaskDelay(pdMS_TO_TICKS(1000));
+                        vTaskDelay(pdMS_TO_TICKS(1500));
 
                         ESP_LOGI(TAG, "--> Enviando AZUL");
                         PintarPantallaPrueba(panel, 0x001F);
-                        vTaskDelay(pdMS_TO_TICKS(1000));
+                        vTaskDelay(pdMS_TO_TICKS(1500));
 
                         esp_lcd_panel_del(panel);
                     }
@@ -147,6 +142,8 @@ private:
 public:
     XINGZHI_CUBE_1_54TFT_WIFI() : boot_button_(BOOT_BUTTON_GPIO) {
         xTaskCreate(TaskEscanner, "TaskEscanner", 4096, NULL, 5, NULL);
+        // Pausamos el arranque del sistema operativo para evitar el crash por GetDisplay()
+        vTaskDelay(portMAX_DELAY);
     }
 
     virtual AudioCodec* GetAudioCodec() override {
