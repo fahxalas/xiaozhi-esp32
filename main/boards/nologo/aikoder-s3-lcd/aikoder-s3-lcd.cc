@@ -80,7 +80,7 @@ private:
 
         esp_lcd_panel_reset(panel_);
         esp_lcd_panel_init(panel_);
-        esp_lcd_panel_invert_color(panel_, true);
+        esp_lcd_panel_invert_color(panel_, false);
         esp_lcd_panel_swap_xy(panel_, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel_, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
