@@ -1,5 +1,6 @@
 {
   "type": "nologo-aikoder-s3-lcd",
   "name": "AiCoder S3",
+  "manufacturer": "nologo",
   "target": "esp32s3"
 }
