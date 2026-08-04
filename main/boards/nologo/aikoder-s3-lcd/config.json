@@ -1,6 +1,5 @@
 {
-    "target": "esp32s3",
-    "build": {
-        "board": "nologo-aikoder-s3-lcd"
-    }
+  "type": "nologo-aikoder-s3-lcd",
+  "name": "AiCoder S3",
+  "target": "esp32s3"
 }
